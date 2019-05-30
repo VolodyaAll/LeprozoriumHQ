@@ -2,105 +2,60 @@
 require 'rubygems'
 require 'sinatra'
 require 'sinatra/reloader'
-require 'sqlite3'
 require 'sinatra/activerecord'
 
+set :database, "sqlite3:leprozoriumhq.db"
 
-def init_db 
-	@db = SQLite3::Database.new 'Leprozorium.db'
-	@db.results_as_hash = true
+class Post < ActiveRecord::Base
+	has_many :comments, dependent: :destroy
+	validates :name, presence: true
+	validates :content, presence: true
 end
 
-before do
-	init_db
-end
-
-configure do
-	init_db
-	@db.execute 'CREATE TABLE IF NOT EXISTS Posts 
-	(
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT,
-		created_date DATE,
-		content TEXT
-	)'
-
-	@db.execute 'CREATE TABLE IF NOT EXISTS Comments 
-	(
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		created_date DATE,
-		content TEXT,
-		post_id INTEGER
-	)'
+class Comment < ActiveRecord::Base
+	belongs_to :post
+	validates :content, presence: true
 end
 
 get '/' do
-	@results = @db.execute 'select * from Posts order by id desc'
+	@results = Post.all.order "id DESC"
 	erb :index
 end
 
 get '/new' do
+	@p = Post.new
   	erb :new
 end
 
 post '/new' do
-	@name = params[:name]
-  	@content = params[:content]
+	@p = Post.new params[:post]
 
-  	hh = {:name => 'Enter your name',
-	:content => 'Enter your message'}
-
-	@error = hh.select{|key,_| params[key] == ""}.values.join(", ")
-
-	if @error != '' 		
-		return erb :new
+	if @p.save
+		redirect '/'
+	else 
+		@error = @p.errors.full_messages.first		
 	end
-
-  	@db.execute 'insert into Posts (name, created_date, content) values (?, datetime(), ?)', [@name, @content]
-  	
-  	redirect to '/'
+	 	
+  	erb :new
 end
 
 get '/detales/:post_id' do
-	post_id = params[:post_id]
-
-	results = @db.execute 'select * from Posts where id=?', [post_id]
+	@post = Post.find params[:post_id]	
 	
-	@row = results[0]
-
-	@comments = @db.execute 'select * from Comments where post_id=? order by id', [post_id]
+	@comments = @post.comments.all.order "id DESC"
 
 	erb :detales
 end
 
 post '/detales/:post_id' do
-	post_id = params[:post_id]
-	content = params[:content]
+	@post = Post.find params[:post_id]
+	@comment = @post.comments.new params[:comment]
+	@comments = @post.comments.all.order "id DESC"
 
-	if content.chomp.empty? 
-		@error = "Enter comment"
-
-		results = @db.execute 'select * from Posts where id=?', [post_id]
-		
-		@row = results[0]
-
-		@comments = @db.execute 'select * from Comments where post_id=? order by id', [post_id]
-
-		erb :detales
-	else
-		@db.execute 'insert into Comments 
-			(
-				created_date,
-				content,
-				post_id
-			) values 
-			(
-				datetime(),
-				?,
-				?
-			)', [content, post_id]
-
-		redirect to '/detales/' + post_id
+	if !@comment.save
+		@error = @comment.errors.full_messages.first
 	end
+
+	erb :detales
 end
 
